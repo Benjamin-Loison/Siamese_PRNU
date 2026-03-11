@@ -1,0 +1,227 @@
+import os
+import argparse
+
+from torch.utils.data import DataLoader
+
+from SCIFunctions.NoiseExtractDL import NoiseExtractDL
+from SCIFunctions.crosscorr import crosscorr
+from SCIFunctions.PCE1 import PCE1
+
+import torch.optim as optim
+from torch.autograd import Variable
+from models_dude_nat import DnCNN
+import h5py
+import random
+from utils import *
+
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
+parser = argparse.ArgumentParser(description="DnCNN")
+parser.add_argument("--preprocess", type=bool, default=False, help='run prepare_data or not')
+parser.add_argument("--batchSize", type=int, default=64, help="Training batch size")
+parser.add_argument("--num_of_layers", type=int, default=17, help="Number of total layers")
+parser.add_argument("--epochs", type=int, default=70, help="Number of training epochs")
+parser.add_argument("--milestone", type=int, default=30, help="When to decay learning rate; should be less than epochs")
+parser.add_argument("--lr", type=float, default=1e-4, help="Initial learning rate")
+parser.add_argument("--outf", type=str, default="logs_nat", help='path of log files')
+
+opt = parser.parse_args()
+
+
+def data_augmentation(image, mode):
+    '''
+    Performs data augmentation of the input image
+    Input:
+        image: a cv2 (OpenCV) image
+        mode: int. Choice of transformation to apply to the image
+                0 - no transformation
+                1 - flip up and down
+                2 - rotate counterwise 90 degree
+                3 - rotate 90 degree and flip up and down
+                4 - rotate 180 degree
+                5 - rotate 180 degree and flip
+                6 - rotate 270 degree
+                7 - rotate 270 degree and flip
+    '''
+    if mode == 0:
+        # original
+        out = image
+    elif mode == 1:
+        # flip up and down
+        out = np.flipud(image)
+    elif mode == 2:
+        # rotate counterwise 90 degree
+        out = np.rot90(image)
+    elif mode == 3:
+        # rotate 90 degree and flip up and down
+        out = np.rot90(image)
+        out = np.flipud(out)
+    elif mode == 4:
+        # rotate 180 degree
+        out = np.rot90(image, k=2)
+    elif mode == 5:
+        # rotate 180 degree and flip
+        out = np.rot90(image, k=2)
+        out = np.flipud(out)
+    elif mode == 6:
+        # rotate 270 degree
+        out = np.rot90(image, k=3)
+    elif mode == 7:
+        # rotate 270 degree and flip
+        out = np.rot90(image, k=3)
+        out = np.flipud(out)
+    else:
+        raise Exception('Invalid choice of image transformation')
+
+    return out
+
+
+def main():
+    resume = True
+    rangeepochs = range(opt.epochs)
+    # Load dataset
+    print('Loading dataset ...\n')
+    # 'path to your prepared data'
+    data = h5py.File('data/VISIONdemo_40_64.mat', 'r')
+    PRNU = np.array(data['PRNU'])
+    img = np.array(data['inputs'])
+
+    # test_dataset = DatasetDnCNNRho()
+    # test_loader = DataLoader(test_dataset, batch_size=1,
+    #                          shuffle=False, num_workers=1,
+    #                          drop_last=False, pin_memory=True)
+
+
+
+    print("# of training samples: %d\n" % int(len(img)))
+
+
+    # Build model
+    model = DnCNN(channels=1)
+    #load pth
+    # model.load_state_dict(torch.load('logs_nat/dude_nat_70.pth'))
+
+    # model.apply(weights_init_kaiming)
+    criterion = nn.MSELoss(reduction='sum')
+    # Move to GPU
+    # model = nn.DataParallel(model, device_ids=[0,1])
+    model.cuda()
+    criterion.cuda()
+    if resume:
+        model.load_state_dict(torch.load('logs_nat/dude_nat_70.pth'))
+        # rangeepochs = range(20, 40)
+    # Optimizer
+    optimizer = optim.Adam(model.parameters(), lr=opt.lr)
+    # training
+    batchsize = opt.batchSize
+    numofbatch = int(len(PRNU) / batchsize)
+    max_pce = 0.0
+    for epoch in rangeepochs:
+        # for epoch in range(opt.epochs):
+        if epoch <= 30:
+            current_lr = opt.lr
+        # if epoch > 20 and epoch <= 40:
+        #     current_lr = opt.lr / 10.
+        if epoch > 30 and epoch <= 60:
+            current_lr = opt.lr / 10.
+        if epoch > 60 and epoch <= 70:
+            current_lr = opt.lr / 100.
+        # set learning rate
+        for param_group in optimizer.param_groups:
+            param_group["lr"] = current_lr
+        print('learning rate %f' % current_lr)
+
+        # train
+        index = list(range(0, len(PRNU)))
+        random.shuffle(index)
+
+        # 训练数据需要置乱
+        shuffedPRNU = PRNU[index, :, :, :]
+        shuffedImg = img[index, :, :, :]
+
+        for i in range(numofbatch):
+            # training step
+            model.train()
+            model.zero_grad()
+            optimizer.zero_grad()
+
+            Bbegin = i * batchsize
+            Bend = Bbegin + batchsize
+            PRNUB = shuffedPRNU[Bbegin:Bend, :, :, :]
+            ImgB = shuffedImg[Bbegin:Bend, :, :, :]
+
+            # 训练数据需要增广
+            augmod = random.randint(0, 3)
+            temptrans = np.transpose(ImgB, (2, 3, 0, 1))
+            temptrans = data_augmentation(temptrans, augmod)
+            ImgB = np.transpose(temptrans, (2, 3, 0, 1)).copy()
+
+            temptrans = np.transpose(PRNUB, (2, 3, 0, 1))
+            temptrans = data_augmentation(temptrans, augmod)
+            PRNUB = np.transpose(temptrans, (2, 3, 0, 1)).copy()
+
+            ImgB = Variable(torch.FloatTensor(ImgB).cuda())
+            PRNUB = Variable(torch.FloatTensor(PRNUB).cuda())
+
+
+            #siamese network
+            out_train_img = model(ImgB)
+            out_train_PRNU = model(PRNUB)
+
+            loss = mloss(out_train_img, out_train_PRNU)
+            loss.backward()
+            optimizer.step()
+
+            # results
+            if (i+1) % 100 == 0:
+                print("[epoch %d][%d/%d] loss: %.7f" %
+                      (epoch + 1, i + 1, numofbatch, loss.item()))
+
+        # the end of each epoch
+
+        model.eval()
+        # # validate
+        # avg_pce = 0.0
+        # idx = 0
+        #
+        # idx += 1
+        #
+        # PRNUV = np.array(data['PRNUV']) .
+        # imgV = np.array(data['inputsV'])
+        #
+        # with torch.no_grad():
+        #     EPRNU = model(imgV)
+        #     PRNUV = model(PRNUV)
+        # imgV = imgV.detach()[0].float().cpu()
+        # EPRNU = EPRNU.detach()[0].float().cpu()
+        #
+        # EPRNUV = EPRNU.squeeze().float().cpu().numpy()
+        # PRNUV = PRNUV.squeeze().float().cpu().numpy()
+        # imgV = imgV.squeeze().float().cpu().numpy()
+        #
+        # # -----------------------
+        # # calculate PCE
+        # # -----------------------
+        #
+        # KI = imgV * PRNUV
+        #
+        # C = crosscorr(EPRNUV, KI)
+        # PCE = PCE1(C)
+        #
+        # avg_pce += PCE
+        #
+        # avg_pce = avg_pce / idx
+        #
+        # print("\n[epoch %d] pce_val: %.6f" % (epoch + 1, avg_pce))
+        #
+        # # save model
+        # if avg_pce > max_pce:
+        #     max_pce = avg_pce
+        #     model_name = 'Siamese_PRNU' + '_' + str(epoch + 1) + '_' + str(avg_pce) + '.pth'
+        #     torch.save(model.state_dict(), os.path.join(opt.outf, model_name))
+    torch.save(model.state_dict(), os.path.join(opt.outf, 'Siamese_PRNU.pth'))
+
+
+if __name__ == "__main__":
+    main()

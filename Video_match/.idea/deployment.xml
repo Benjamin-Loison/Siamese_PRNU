@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" autoUpload="Always" serverName="seamus20@10.185.248.231:22 password" remoteFilesAllowedToDisappearOnAutoupload="false" autoUploadExternalChanges="true">
+    <serverData>
+      <paths name="seamus20@10.185.248.231:22 password">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/home/seamus20/z_Project/Video_match" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+          <excludedPaths>
+            <excludedPath path="/home/seamus20/z_Project/Video_match/train_logs" />
+            <excludedPath path="/home/seamus20/z_Project/Video_match/SDI_Cross/Noises_lists" />
+            <excludedPath path="/home/seamus20/z_Project/Video_match/SDI_Cross/VISION_PRNU_npy" />
+            <excludedPath path="/home/seamus20/z_Project/Video_match/SDI_Cross/Dresden_PRNU_npy" />
+          </excludedPaths>
+        </serverdata>
+      </paths>
+    </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
+  </component>
+</project>
