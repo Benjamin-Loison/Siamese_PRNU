@@ -24,13 +24,11 @@ The framework operates in two collaborative stages:
 Run the following command to extract the reference PRNU fingerprint of the camera:
 ```bash
 python EXTRACT_PRNU_ALL_IMAGE.py
-
 ```
 2. PRNU feature matching and verification
 Based on the extracted reference PRNU, perform matching and performance evaluation:
 ```bash
 python ./Video_match/cnn_test_new.py
-
 ```
 ---
 
@@ -38,13 +36,12 @@ python ./Video_match/cnn_test_new.py
 
 If you find this work helpful for your research, please cite:
 
-```
+```bibtex
 @article{li2026prnu,
   title={PRNU-Adapted Deep Fingerprint Learning and Reparameterized Correlation for Camera Source Identification},
   author={Li, Jian and Zou, Fei and Ma, Bin and Li, Xiaolong and Qian, Zhenxing and Gao, Bo},
   journal={Preprint submitted to Elsevier},
   year={2026}
 }
-
 ```
 
